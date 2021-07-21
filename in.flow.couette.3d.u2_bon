@@ -1,0 +1,340 @@
+################################################################################
+# 3-d LJ flow simulation
+# Author: D. Chibouti
+################################################################################
+
+
+#-------------------------------------------------------------------------------
+# settings variables
+#-------------------------------------------------------------------------------
+
+variable	x   equal 10
+variable	y   equal 10
+variable	z   equal 1
+variable	dx  equal floor(${x}/9)
+variable	dy  equal floor(${y}/9)
+variable	dz  equal floor(${z}/9)
+
+variable	rho equal 0.6				# fluid density
+variable	RO  equal 0.8	             		# wall density    
+variable	T   equal 1.5                       	# temperature
+variable	Ti  equal 8.0                       	# wall temperature  !!!
+variable	V   equal vol                       	# volume
+variable	v0  equal 2.0                      	# velocity
+variable	rc  equal 2.5                       	# cutoff radius for shifted LJ-potential
+
+variable	dt  equal 0.006		      	# timestep delta t (pas de temps)
+variable	p   equal 100                       	# correlation length (step)
+variable	s   equal 5                         	# sample interval  (echantillon)
+variable	d   equal $p*$s                     	# dump interval (timesteps interval)
+	
+variable	tprod equal 5000                    	# simulation time for the production run
+variable	Nprod equal floor(${tprod}/${dt})   	# total number of timesteps
+
+
+#-------------------------------------------------------------------------------
+# settings
+#-------------------------------------------------------------------------------
+
+# options used for fix ave/time; sample the quantities every 10 steps
+
+variable	Niter0  equal 3000
+variable	Niter1  equal 5000
+variable	Niter   equal 10000
+variable	Nsamp   equal 10
+variable	Nrepeat equal floor(${Nprod}/${Nsamp})
+variable	Nevery  equal ${Nsamp}*${Nrepeat}
+
+#-------------------------------------------------------------------------------
+# convert from LAMMPS real units to SI
+#-------------------------------------------------------------------------------
+
+variable        kB      equal 1.3806504e-23  		# [J/K] Boltzmann
+variable        atm2Pa  equal 101325.0
+variable        A2m     equal 1.0e-10
+variable        fs2s    equal 1.0e-15
+variable        convert equal ${atm2Pa}*${atm2Pa}*${fs2s}*${A2m}*${A2m}*${A2m}
+
+#-------------------------------------------------------------------------------
+# setup problem
+#-------------------------------------------------------------------------------
+
+units		lj                                  	# define units
+dimension	3                               	# dimension : 2d, 3d
+boundary	p p p                               	# specify periodic boundary conditions
+
+
+atom_style	atomic
+neighbor	0.3 bin                             	# specify parameters for neighbor list
+                                                    	# rnbr = rcut + 0.3 
+neigh_modify	delay 5
+
+
+#-------------------------------------------------------------------------------
+#
+#  create geometry : regions, groups ...
+#
+#-------------------------------------------------------------------------------
+
+lattice     fcc ${RO}                              # fcc = face centered cubic (atomic structure) 
+                                                   # density : {RO} for solid
+#*******************************************************************************
+#  define regions
+#*******************************************************************************
+region      simbox      block 0.0 15.0 0.0 15.0 0.0 30.0
+region      upper_wall  block 0.0 14.5 0.0 14.5 20.0 25.0 
+region      lower_wall  block 0.0 14.5 0.0 14.5 5.0 10.0 
+region      upper_space block 0.0 14.5 0.0 14.5 25.0 30.0 
+region      lower_space block 0.0 14.5 0.0 14.5 0.0 5.0
+region      bulk        block 1.0 13.0 1.0 13.0 12.0 18.0
+
+
+create_box  2 simbox
+
+
+#  create atoms for regions "upper_wall" & "lower_wall"
+
+create_atoms    1 region upper_wall  
+create_atoms    1 region lower_wall 
+mass            1 1.0
+
+
+#-------------------------------------------------------------------------------
+# define groups
+#-------------------------------------------------------------------------------
+#  create the group "wall"   
+
+group       upper region upper_wall
+group       lower region lower_wall 
+group       wall union upper lower
+set         group wall type 1
+
+
+#  create the group "wall_space"   
+
+group       upper_space region upper_space
+group       lower_space region lower_space
+group       wall_space union upper_space lower_space
+set         group wall_space type 1
+
+
+lattice fcc     ${rho}                             # fcc = face centered cubic (atomic structure) 
+                                                   # density : {rho} for fluid   
+create_atoms    2 region bulk
+mass            2 1.0
+
+
+#  create the group "fluid" 
+
+group       fluid subtract all wall wall_space  
+set         group fluid type 2
+
+
+#  create the group "l_wall_no_space" and "u_wall_no_space"
+
+group       l_wall_no_space subtract all wall_space upper fluid 
+group       u_wall_no_space subtract all wall_space lower fluid
+
+#-------------------------------------------------------------------------------
+#
+#  Interaction potential
+#
+#-------------------------------------------------------------------------------
+
+
+pair_style  lj/cut ${rc}
+
+
+pair_coeff  1 1 50.0 1.0 ${rc}                   	#  ... between atoms of type 1 and 1 
+pair_coeff  2 2 1.0  1.0 ${rc}                  	#  ... between atoms of type 2 and 2 
+pair_coeff  1 2 1.0  1.0 ${rc}                  	#  ... between atoms of type 1 and 2
+
+pair_modify shift yes 
+
+
+fix         force wall_space setforce 0.0 0.0 0.0
+
+
+#-------------------------------------------------------------------------------
+#
+# SIMULATION  
+#
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+# initial velocities
+#-------------------------------------------------------------------------------
+
+compute	mobile fluid temp/profile 1 0 0 z 20
+velocity	fluid create $T 482748 temp mobile 
+fix		1 all nve
+fix		2 fluid temp/rescale 200 $T $T 0.02 1.0
+fix_modify	2 temp mobile
+
+#-------------------------------------------------------------------------------
+#
+# SIMULATION - 1st run computation
+#
+#-------------------------------------------------------------------------------
+
+#fix	        nve all nve
+
+fix         lang_upper   u_wall_no_space langevin ${T} ${T} 0.5 6586
+fix         lang_lower   l_wall_no_space langevin $T $T 0.5 3215
+
+
+
+
+# compute temp :                                        # compute   mobile fluid temp
+
+compute     temp_fluid   fluid temp
+compute     temp_lower   lower temp 
+compute     temp_upper   upper temp
+
+
+
+# set variables
+
+variable    T_fluid equal c_temp_fluid
+variable    T_lower equal c_temp_lower
+variable    T_upper equal c_temp_upper
+
+
+
+
+timestep    ${dt}
+
+thermo_style custom step temp c_temp_fluid c_temp_lower c_temp_upper pe ke etotal 
+
+thermo      ${d}
+
+run         ${Niter0}
+
+#*******************************************************************************
+#   save process               !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#*******************************************************************************
+write_restart restart.save
+
+#reset_timestep 0
+
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+#   outputs
+#-------------------------------------------------------------------------------  
+
+#  compute per-atom potencial and kinetic energy 
+
+compute     ke all ke/atom
+compute     pe all pe/atom
+
+variable    Temp1 atom   c_ke/1.5                        # temperature !!!
+
+variable    NiterA  equal ${Niter0}+${Niter1}
+
+
+print       "***************************************************************"
+print       "                   run after equilibration                     "
+print       "***************************************************************"
+
+#   run simulation
+run         ${Niter1}
+
+
+#-------------------------------------------------------------------------------
+# couette flow inialisation 
+#-------------------------------------------------------------------------------
+
+# initial velocities :     	    # velocity fluid create $T 482748 temp mobile
+
+#compute	mobile fluid temp/profile 1 0 0 z 20
+velocity	fluid create $T 482748 temp mobile 
+fix		1 all nve
+fix		2 fluid temp/rescale 200 $T $T 0.02 1.0
+fix_modify	2 temp mobile
+
+#velocity    	fluid create $T 12345
+
+fix         	lang_upper   u_wall_no_space langevin ${T} ${T} 0.5 6586
+fix         	lang_lower   l_wall_no_space langevin $T $T 0.5 3215
+
+#-------------------------------------------------------------------------------
+#
+# Couette flow
+#
+#-------------------------------------------------------------------------------
+
+# velocities
+
+# condition 1 : magnifique temperature profile {but not velocity :(  }
+
+#velocity   	l_wall_no_space 	set 	  0.0 0.0 0.0	 	units box		# stationary wall
+#velocity   	u_wall_no_space 	set 	  ${v0} 0.0 0.0	units box		# mobile wall
+
+
+# condition 2 : magnifique velocity profile {but not  temperature :(  }
+
+velocity	lower 		set	  0.0   0.0 0.0 	units box
+velocity	upper 		set	  ${v0} 0.0 0.0 	units box
+
+
+# condition 3 :  !! can't fix it !!!!!!!
+
+variable    	x0 equal vdisplace(0.0,${v0})
+#fix		d1 upper move variable v_x0 NULL NULL v_v0 NULL NULL      			# mobile wall
+
+
+#fix		20 upper temp/rescale 200 $T $T 0.02 1.0
+
+#*******************************************************************************
+# Maxwellian reflection   ??????????
+# upper wall velocity = 0.1, lower wall fixed, 
+# accommodation coefficient = 0.2 for both walls
+
+#fix ywalls all wall/reflect/stochastic maxwell 29839 &
+#     ylo EDGE 300 0 0 0 0.2 yhi EDGE 300 0 0 0.1 0.2 
+#*******************************************************************************
+#fix		3 wall	setforce  0.0   0.0 0.0
+#fix        	4 all 	addforce  0.037 0.0 0.0
+
+#------------------------------------------------------------------------------
+# save to file
+#------------------------------------------------------------------------------
+
+
+variable    NiterB equal ${Niter0}+${Niter1}+${Niter}
+
+compute     layer1 all chunk/atom bin/1d z 0.0 1.0   &
+                                         # z lower 1.0   # y 0.0 0.25 # units reduced 
+fix         fsave1 all ave/chunk 1 2000 ${NiterB} layer1 vx vy vz v_Temp1 density/mass &
+	    norm sample file u_T1.profile
+
+compute     layer2 all chunk/atom bin/1d z lower 0.0125 units reduced
+fix		fsave2 all ave/chunk 1 200 ${NiterB} layer2 vx vy vz v_Temp1 density/mass &
+            norm sample file profile_vel_Temp.all
+
+compute     layer22 all chunk/atom bin/1d z lower 0.0125 units reduced
+fix		    fsave22 all ave/chunk 1 200 ${NiterB} layer22 vx vy vz temp density/mass &
+            norm sample file profile_vel_Temp.all_temp
+
+compute     layer3 fluid chunk/atom bin/1d z lower 0.0125 units reduced
+fix		    fsave3 fluid ave/chunk 1 200 ${NiterB} layer3 vx vy vz v_Temp1 density/mass &
+            norm sample file profile_vel_Temp.fluid
+
+compute     layer33 fluid chunk/atom bin/1d z lower 0.0125 units reduced
+fix		    fsave33 fluid ave/chunk 1 200 ${NiterB} layer33 vx vy vz temp density/mass &
+            norm sample file profile_vel_Temp.fluid_temp
+
+#-------------------------------------------------------------------------------
+print       	"***************************************************************"
+print       	"                   final run                                   "
+print       	"***************************************************************"
+
+
+#  run simulation
+
+run         	${Niter}
+
+#-------------------------------------------------------------------------------
+
+
