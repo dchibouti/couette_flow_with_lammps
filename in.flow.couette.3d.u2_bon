@@ -152,14 +152,13 @@ pair_coeff  1 2 1.0  1.0 ${rc}                  	#  ... between atoms of type 1 
 pair_modify shift yes 
 
 
-fix         force wall_space setforce 0.0 0.0 0.0
-
-
 #-------------------------------------------------------------------------------
 #
 # SIMULATION  
 #
 #-------------------------------------------------------------------------------
+
+fix         force wall_space setforce 0.0 0.0 0.0
 
 #-------------------------------------------------------------------------------
 # initial velocities
@@ -177,12 +176,10 @@ fix_modify	2 temp mobile
 #
 #-------------------------------------------------------------------------------
 
-#fix	        nve all nve
+# langevin thermostat :
 
 fix         lang_upper   u_wall_no_space langevin ${T} ${T} 0.5 6586
 fix         lang_lower   l_wall_no_space langevin $T $T 0.5 3215
-
-
 
 
 # compute temp :                                        # compute   mobile fluid temp
@@ -201,6 +198,7 @@ variable    T_upper equal c_temp_upper
 
 
 
+# setting run parameters :
 
 timestep    ${dt}
 
@@ -247,7 +245,6 @@ run         ${Niter1}
 
 # initial velocities :     	    # velocity fluid create $T 482748 temp mobile
 
-#compute	mobile fluid temp/profile 1 0 0 z 20
 velocity	fluid create $T 482748 temp mobile 
 fix		1 all nve
 fix		2 fluid temp/rescale 200 $T $T 0.02 1.0
@@ -268,7 +265,7 @@ fix         	lang_lower   l_wall_no_space langevin $T $T 0.5 3215
 
 # condition 1 : magnifique temperature profile {but not velocity :(  }
 
-#velocity   	l_wall_no_space 	set 	  0.0 0.0 0.0	 	units box		# stationary wall
+#velocity   	l_wall_no_space 	set 	  0.0 0.0 0.0	units box		# stationary wall
 #velocity   	u_wall_no_space 	set 	  ${v0} 0.0 0.0	units box		# mobile wall
 
 
@@ -281,21 +278,29 @@ velocity	upper 		set	  ${v0} 0.0 0.0 	units box
 # condition 3 :  !! can't fix it !!!!!!!
 
 variable    	x0 equal vdisplace(0.0,${v0})
-#fix		d1 upper move variable v_x0 NULL NULL v_v0 NULL NULL      			# mobile wall
+#fix		d1 upper move variable v_x0 NULL NULL v_v0 NULL NULL      		# mobile wall
 
 
+# rescaling temp !!!
 #fix		20 upper temp/rescale 200 $T $T 0.02 1.0
 
 #*******************************************************************************
 # Maxwellian reflection   ??????????
-# upper wall velocity = 0.1, lower wall fixed, 
+# upper wall velocity = 2.0, lower wall fixed, 
 # accommodation coefficient = 0.2 for both walls
 
-#fix ywalls all wall/reflect/stochastic maxwell 29839 &
-#     ylo EDGE 300 0 0 0 0.2 yhi EDGE 300 0 0 0.1 0.2 
+#fix 		zwalls all wall/reflect/stochastic maxwell 29839 &
+#     		zlo EDGE $T 0 0 0 0.2 zhi EDGE $T 2.0 0 0 0.2 
+
+
+# Deffusive reflection   ??????????
+# upper wall velocity = 2.0, lower wall fixed
+#fix		zwalls all wall/reflect/stochastic diffusive 23424 &
+		zlo EDGE 1.5 0 0 0 zhi EDGE 1.5 2.0 0 0
 #*******************************************************************************
+
 #fix		3 wall	setforce  0.0   0.0 0.0
-#fix        	4 all 	addforce  0.037 0.0 0.0
+#fix        	4 all 	addforce  0.037 0.0 0.0		# for poiseuille flow !!!
 
 #------------------------------------------------------------------------------
 # save to file
