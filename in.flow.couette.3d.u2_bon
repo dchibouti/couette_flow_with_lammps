@@ -309,25 +309,20 @@ variable    	x0 equal vdisplace(0.0,${v0})
 
 variable    NiterB equal ${Niter0}+${Niter1}+${Niter}
 
-compute     layer1 all chunk/atom bin/1d z 0.0 1.0   &
-                                         # z lower 1.0   # y 0.0 0.25 # units reduced 
-fix         fsave1 all ave/chunk 1 2000 ${NiterB} layer1 vx vy vz v_Temp1 density/mass &
-	    norm sample file u_T1.profile
 
-compute     layer2 all chunk/atom bin/1d z lower 0.0125 units reduced
-fix		fsave2 all ave/chunk 1 200 ${NiterB} layer2 vx vy vz v_Temp1 density/mass &
+compute     layer2 all chunk/atom bin/1d z lower 0.0125 units reduced			# all
+compute     layer3 fluid chunk/atom bin/1d z lower 0.0125 units reduced			# fluid
+
+fix	    fsave2 all ave/chunk 1 200 ${NiterB} layer2 vx vy vz v_Temp1 density/mass &
             norm sample file profile_vel_Temp.all
 
-compute     layer22 all chunk/atom bin/1d z lower 0.0125 units reduced
-fix		    fsave22 all ave/chunk 1 200 ${NiterB} layer22 vx vy vz temp density/mass &
+fix	    fsave22 all ave/chunk 1 200 ${NiterB} layer2 vx vy vz temp density/mass &
             norm sample file profile_vel_Temp.all_temp
 
-compute     layer3 fluid chunk/atom bin/1d z lower 0.0125 units reduced
-fix		    fsave3 fluid ave/chunk 1 200 ${NiterB} layer3 vx vy vz v_Temp1 density/mass &
+fix 	    fsave3 fluid ave/chunk 1 200 ${NiterB} layer3 vx vy vz v_Temp1 density/mass &
             norm sample file profile_vel_Temp.fluid
 
-compute     layer33 fluid chunk/atom bin/1d z lower 0.0125 units reduced
-fix		    fsave33 fluid ave/chunk 1 200 ${NiterB} layer33 vx vy vz temp density/mass &
+fix	    fsave33 fluid ave/chunk 1 200 ${NiterB} layer3 vx vy vz temp density/mass &
             norm sample file profile_vel_Temp.fluid_temp
 
 #-------------------------------------------------------------------------------
