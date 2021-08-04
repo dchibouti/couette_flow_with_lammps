@@ -1,4 +1,4 @@
-# couette_flow_with_lammps
+# couette-flow-with-lammps
 
 
 The repository contains the work done on computation of ***Couette flow***
